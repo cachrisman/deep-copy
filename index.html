@@ -45,6 +45,7 @@
     label {
       font-weight: normal;
     }
+
   </style>
 </head>
 
@@ -72,7 +73,7 @@
   <script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.5/js/bootstrap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"></script>
   <script>
-    window.contentfulExtension.init(function (api) {
+    window.contentfulExtension.init(function(api) {
       window.api = api
       console.log('starting Deep Copy Extension')
       var rendered = Mustache.render(document.getElementById('template-get-content-tree').innerHTML);
@@ -81,13 +82,18 @@
       api.window.startAutoResizer();
 
       var contentTypes
+      var counter = 0
 
       function getContentTree() {
         api.space.getContentTypes().then(response => {
           contentTypes = response.items
           console.log('contentTypes: ', contentTypes);
           let entryId = api.entry.getSys().id
-          let finalList = processEntry(entryId, [entryId])
+          let finalList = processEntry({
+            type: 'entry',
+            id: entryId,
+            children: []
+          })
           Promise.all(finalList).then(_finalList => {
             window.finalList = _finalList
             console.log('finalList: ', window.finalList)
@@ -95,38 +101,74 @@
         })
       }
 
-      var counter = 0
-
-      function processEntry(entryId, list) {
+      function processEntry(branch) {
         console.log(counter++)
-        api.space.getEntry(entryId).then(entry => {
-          // console.log('entry: ', entry);
-          let entryType = entry.sys.contentType.sys.id
-          // console.log('entryType: ', entryType);
-          let contentType = contentTypes.filter(ct => ct.sys.id === entryType)[0]
-          // console.log('contentType: ', contentType);
-          let singleReferenceFields = contentType.fields.filter(field => field.type == "Link")
-          let multiReferenceFields = contentType.fields.filter(field => field.type == "Array" && field.items.type == "Link")
-          for (field of singleReferenceFields) {
-            // console.log('field: ', field);
-            let refEntryId = entry.fields[field.id]['en-US'].sys.id
-            list.push(Promise.resolve(refEntryId))
-            processEntry(refEntryId, list)
-          }
-          for (field of multiReferenceFields) {
-            // console.log('field: ', field);
-            for (ref of entry.fields[field.id]["en-US"]) {
-              let refEntryId = ref.sys.id
-              list.push(Promise.resolve(refEntryId))
-              processEntry(refEntryId, list)
+        if (branch.type === 'Entry') {
+          api.space.getEntry(entryId)
+          .then(entry => {
+            // console.log('entry: ', entry);
+            let entryType = entry.sys.contentType.sys.id
+            // console.log('entryType: ', entryType);
+            let contentType = contentTypes.filter(ct => ct.sys.id === entryType)[0]
+            // console.log('contentType: ', contentType);
+            // make lists of all the single/multiple entry/asset fields
+            let singleReferenceEntryFields = contentType.fields.filter(field => field.type == "Link" && field.linkType == "Entry")
+            let multiReferenceEntryFields = contentType.fields.filter(field => field.type == "Array" && field.items.type == "Link" && field.items.linkType == "Entry")
+            let singleReferenceAssetFields = contentType.fields.filter(field => field.type == "Link" && field.linkType == "Asset")
+            let multiReferenceAssetFields = contentType.fields.filter(field => field.type == "Array" && field.items.type == "Link" && field.items.linkType == "Asset")
+            // loop through single reference entry fields, create child object with referenced entry id, push into current branch, and process
+            for (field of singleReferenceEntryFields) {
+              let refEntryId = entry.fields[field.id]['en-US'].sys.id
+              let childObj = {
+                type: 'Entry',
+                id: refEntryId,
+                children: []
+              }
+              branch.children.push(childObj)
+              processEntry(childObj)
             }
-          }
-          Promise.all(list).then(list => console.log('list: ', list))
-          return list
-        }).catch(err => {
-          console.error(err)
-          return list
-        })
+            // loop through single reference entry fields, create children objects with referenced entry ids, push into current branch, and process
+            for (field of multiReferenceEntryFields) {
+              for (ref of entry.fields[field.id]["en-US"]) {
+                let refEntryId = ref.sys.id
+                let childObj = {
+                  type: 'Entry',
+                  id: refEntryId,
+                  children: []
+                }
+                branch.children.push(childObj)
+                processEntry(childObj)
+              }
+            }
+            // loop through single reference entry fields, create child object with referenced asset id, push into current branch, and process
+            for (field of singleReferenceAssetFields) {
+              let refEntryId = entry.fields[field.id]['en-US'].sys.id
+              let childObj = {
+                type: 'Asset',
+                id: refEntryId,
+              }
+              branch.children.push(childObj)
+              processEntry(childObj)
+            }
+            // loop through single reference entry fields, create children objects with referenced asset ids, push into current branch, and process
+            for (field of multiReferenceAssetFields) {
+              for (ref of entry.fields[field.id]["en-US"]) {
+                let refEntryId = ref.sys.id
+                let childObj = {
+                  type: 'Asset',
+                  id: refEntryId
+                }
+                branch.children.push(childObj)
+                processEntry(childObj)
+              }
+            }
+            Promise.all(list).then(list => console.log('list: ', list))
+            return branch
+          })
+          .catch(console.error)
+        } else if (branch.type === 'Asset') {
+
+        }
       }
     })
 
