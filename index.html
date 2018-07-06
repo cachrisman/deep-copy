@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Deep Copy Extension</title>
+  <link rel="stylesheet" href="https://unpkg.com/contentful-ui-extensions-sdk@3/dist/cf-extension.css" />
+  <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.5/css/bootstrap.min.css" />
+  <style>
+    body {
+      font-family: "Avenir Next W01", Helvetica, sans-serif;
+      font-size: 14px;
+      margin: 0;
+      color: #8091a5 !important;
+      overflow: hidden;
+      background-color: #f7f9fa;
+    }
+
+    p {
+      margin-top: 0;
+      margin-bottom: 1em;
+    }
+
+    .button {
+      display: block;
+      position: relative;
+      border-right: none;
+      overflow: hidden;
+      width: 100%;
+      height: 40px;
+      white-space: nowrap;
+      outline: 0;
+      padding: 0.625rem 1.5rem;
+      cursor: pointer;
+      text-align: center;
+      font-weight: 500;
+      border: 1px solid transparent;
+      border-color: #0eb87f;
+      border-radius: 2px;
+      line-height: 18px;
+      color: #fff;
+      background: linear-gradient(to top, #0eb87f, #14d997);
+      background-size: 100% 200%;
+    }
+
+    label {
+      font-weight: normal;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="content"></div>
+  <script id="template-get-content-tree" type="x-tmpl-mustache">
+    <div>
+      <button id='get-content-tree' class="button cf-block">Get Content Tree</button>
+    </div>
+  </script>
+  <script id="template2" type="x-tmpl-mustache">
+    <p>Please select the locales you wish to publish:</p>
+    {{#locales}}
+    <div>
+      <input type="checkbox" id="{{.}}" name="{{.}}" value="{{.}}">
+      <label for="{{.}}">{{.}}</label>
+    </div>
+    {{/locales}}
+    <div>
+      <button id='locale-publisher-button' class="button cf-block">Publish</button>
+    </div>
+  </script>
+  <script src="https://unpkg.com/contentful-ui-extensions-sdk@3"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.5/js/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"></script>
+  <script>
+    window.contentfulExtension.init(function (api) {
+      window.api = api
+      console.log('starting Deep Copy Extension')
+      var rendered = Mustache.render(document.getElementById('template-get-content-tree').innerHTML);
+      document.getElementById('content').innerHTML = rendered;
+      document.getElementById('get-content-tree').addEventListener('click', getContentTree)
+      api.window.startAutoResizer();
+
+      var contentTypes
+
+      function getContentTree() {
+        api.space.getContentTypes().then(response => {
+          contentTypes = response.items
+          console.log('contentTypes: ', contentTypes);
+          let entryId = api.entry.getSys().id
+          let finalList = processEntry(entryId, [entryId])
+          Promise.all(finalList).then(_finalList => {
+            window.finalList = _finalList
+            console.log('finalList: ', window.finalList)
+          })
+        })
+      }
+
+      var counter = 0
+
+      function processEntry(entryId, list) {
+        console.log(counter++)
+        api.space.getEntry(entryId).then(entry => {
+          // console.log('entry: ', entry);
+          let entryType = entry.sys.contentType.sys.id
+          // console.log('entryType: ', entryType);
+          let contentType = contentTypes.filter(ct => ct.sys.id === entryType)[0]
+          // console.log('contentType: ', contentType);
+          let singleReferenceFields = contentType.fields.filter(field => field.type == "Link")
+          let multiReferenceFields = contentType.fields.filter(field => field.type == "Array" && field.items.type == "Link")
+          for (field of singleReferenceFields) {
+            // console.log('field: ', field);
+            let refEntryId = entry.fields[field.id]['en-US'].sys.id
+            list.push(Promise.resolve(refEntryId))
+            processEntry(refEntryId, list)
+          }
+          for (field of multiReferenceFields) {
+            // console.log('field: ', field);
+            for (ref of entry.fields[field.id]["en-US"]) {
+              let refEntryId = ref.sys.id
+              list.push(Promise.resolve(refEntryId))
+              processEntry(refEntryId, list)
+            }
+          }
+          Promise.all(list).then(list => console.log('list: ', list))
+          return list
+        }).catch(err => {
+          console.error(err)
+          return list
+        })
+      }
+    })
+
+  </script>
+
+</body>
+
+
+</html>

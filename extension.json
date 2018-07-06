@@ -1,0 +1,6 @@
+{
+  "id": "deepPublishExtension",
+  "name": "Deep Publish Extension",
+  "srcdoc": "index.html",
+  "fieldTypes": ["Symbol"]
+}
